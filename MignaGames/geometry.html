@@ -254,6 +254,14 @@
     window.addEventListener('keydown', e => { if(e.code==='Space'||e.code==='ArrowUp') { e.preventDefault(); jump(); } });
     canvas.addEventListener('mousedown', (e)=>{e.preventDefault(); jump();});
     canvas.addEventListener('touchstart', (e)=>{e.preventDefault(); jump();});
+
+    // --- FUNCIÓN AGREGADA PARA ARREGLAR EL JUEGO ---
+    function loop() {
+        update();
+        draw();
+    }
+    // ----------------------------------------------
+
     iniciarRed(); loop();
 </script>
 </body>

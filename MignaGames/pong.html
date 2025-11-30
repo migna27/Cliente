@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Cyber Pong</title>
+    <style>
+        body {
+            margin: 0; background-color: #050505; overflow: hidden;
+            font-family: 'Segoe UI', monospace; color: #00E5FF;
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; height: 100vh; user-select: none;
+        }
+        canvas {
+            border: 2px solid #00E5FF; 
+            box-shadow: 0 0 20px rgba(0, 229, 255, 0.2);
+            background: #000; cursor: none;
+            outline: none;
+        }
+        #ui-layer {
+            position: absolute; top: 20px; width: 100%; text-align: center; pointer-events: none;
+        }
+        h1 { margin: 0; font-size: 3em; text-shadow: 0 0 10px #00E5FF; letter-spacing: 5px; font-style: italic; }
+        #game-over-screen {
+            display: none; position: absolute; background: rgba(0, 10, 20, 0.95);
+            padding: 40px; border: 2px solid #00E5FF; box-shadow: 0 0 50px rgba(0, 229, 255, 0.5);
+            text-align: center; z-index: 20; border-radius: 8px;
+        }
+        button {
+            background: transparent; color: #00E5FF; border: 2px solid #00E5FF;
+            padding: 10px 30px; font-size: 1.5em; cursor: pointer; font-weight: bold;
+            margin-top: 20px; text-transform: uppercase; transition: 0.2s;
+        }
+        button:hover { background: #00E5FF; color: #000; box-shadow: 0 0 20px #00E5FF; }
+        
+        /* Instrucciones pequeñas */
+        .hint { color: #555; font-size: 0.8em; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <h1>CYBER PONG</h1>
+        <p style="font-size: 1.2em; color: #888;">HITS: <span id="score" style="color: #fff; font-size: 1.5em;">0</span></p>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="500" tabindex="1"></canvas>
+
+    <div id="game-over-screen">
+        <h2 style="color: #FF0055; font-size: 3em; margin: 0; text-shadow: 0 0 10px red;">MISS!</h2>
+        <p>FINAL HITS: <span id="final-score" style="color: #fff; font-size: 2em;">0</span></p>
+        <p id="upload-msg" style="color: #888; font-style: italic;">SYNCING...</p>
+        <button onclick="resetGame()">REMATCH</button>
+        <p class="hint">PRESS SPACE TO RESTART</p>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    window.onload = () => canvas.focus();
+
+    // --- MOTOR DE AUDIO (Nativo) ---
+    const AudioEngine = {
+        ctx: null,
+        init: function() {
+            if (!this.ctx) { 
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)(); 
+            }
+            if (this.ctx.state === 'suspended') { 
+                this.ctx.resume(); 
+            }
+        },
+        playTone: function(freq, type, duration, vol=0.1) {
+            if(!this.ctx) return;
+            const osc = this.ctx.createOscillator(); 
+            const gain = this.ctx.createGain();
+            
+            osc.type = type; 
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            
+            gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+            
+            osc.connect(gain); 
+            gain.connect(this.ctx.destination);
+            
+            osc.start(); 
+            osc.stop(this.ctx.currentTime + duration);
+        },
+        playHitPlayer: function() { this.playTone(600, 'square', 0.1, 0.1); },
+        playHitCPU: function() { this.playTone(400, 'square', 0.1, 0.1); },
+        playWall: function() { this.playTone(200, 'triangle', 0.05, 0.1); },
+        playScore: function() { this.playTone(800, 'sine', 0.1, 0.05); }, // No usado en modo rally
+        playDie: function() { this.playTone(100, 'sawtooth', 0.5, 0.2); }
+    };
+
+    // Configuración
+    let score = 0;
+    let gameRunning = true;
+    let upPressed = false;
+    let downPressed = false;
+
+    // Paletas
+    const paddleWidth = 15;
+    const paddleHeight = 80;
+    const player = { x: 20, y: 200, speed: 7 }; 
+    const cpu = { x: canvas.width - 35, y: 200, speed: 4 };
+
+    // Bola
+    const ball = { 
+        x: canvas.width/2, y: canvas.height/2, 
+        size: 10, speed: 4, 
+        dx: 0, dy: 0 
+    };
+
+    // Red
+    async function enviarPuntaje(puntos) {
+        const msg = document.getElementById('upload-msg');
+        try {
+            await fetch('/send', { method: 'POST', body: JSON.stringify({ message: `/submit_score pong ${puntos}` }) });
+            await fetch('/send', { method: 'POST', body: JSON.stringify({ message: `🏓 [ARCADE] Racha de ${puntos} golpes en Cyber Pong!` }) });
+            msg.innerText = "UPLOAD COMPLETE"; msg.style.color = "#00E5FF";
+        } catch { 
+            msg.innerText = "OFFLINE MODE"; msg.style.color = "#FF0055"; 
+        }
+    }
+
+    function initBall() {
+        ball.x = canvas.width / 2;
+        ball.y = canvas.height / 2;
+        ball.speed = 4; // Velocidad amigable
+        
+        // CORRECCIÓN: Siempre sale hacia la CPU (derecha) para no perder al inicio
+        ball.dx = ball.speed; 
+        ball.dy = (Math.random() * 2 - 1) * 3;
+    }
+
+    function update() {
+        if (!gameRunning) return;
+
+        // Movimiento Jugador
+        if(upPressed) player.y -= player.speed;
+        else if(downPressed) player.y += player.speed;
+
+        // Movimiento CPU
+        if (cpu.y + paddleHeight/2 < ball.y - 10) cpu.y += cpu.speed;
+        else if (cpu.y + paddleHeight/2 > ball.y + 10) cpu.y -= cpu.speed;
+
+        // Límites
+        if(player.y < 0) player.y = 0;
+        if(player.y + paddleHeight > canvas.height) player.y = canvas.height - paddleHeight;
+        if(cpu.y < 0) cpu.y = 0;
+        if(cpu.y + paddleHeight > canvas.height) cpu.y = canvas.height - paddleHeight;
+
+        // Movimiento Bola
+        ball.x += ball.dx;
+        ball.y += ball.dy;
+
+        // Rebote Muros (Sonido)
+        if (ball.y < 0 || ball.y + ball.size > canvas.height) {
+            ball.dy *= -1;
+            AudioEngine.playWall();
+        }
+
+        // 1. Rebote Paleta JUGADOR
+        if (ball.x < player.x + paddleWidth && ball.y > player.y && ball.y < player.y + paddleHeight) {
+            ball.dx = Math.abs(ball.dx); 
+            score++;
+            document.getElementById('score').innerText = score;
+            AudioEngine.playHitPlayer(); // Sonido Jugador
+            increaseDifficulty();
+        }
+
+        // 2. Rebote Paleta CPU
+        if (ball.x + ball.size > cpu.x && ball.y > cpu.y && ball.y < cpu.y + paddleHeight) {
+            ball.dx = -Math.abs(ball.dx);
+            AudioEngine.playHitCPU(); // Sonido CPU
+        }
+
+        // 3. CPU Falla (Bola sale por derecha)
+        if (ball.x > canvas.width) {
+            AudioEngine.playScore(); // Sonido "Punto"
+            resetBallPos(false); 
+        }
+
+        // 4. JUGADOR Falla (Game Over)
+        if (ball.x < 0) {
+            gameOver();
+        }
+
+        draw();
+        requestAnimationFrame(update);
+    }
+
+    function increaseDifficulty() {
+        ball.speed += 0.2; 
+        const angle = Math.atan2(ball.dy, ball.dx);
+        ball.dx = Math.cos(angle) * ball.speed;
+        ball.dy = Math.sin(angle) * ball.speed;
+        if(cpu.speed < 9) cpu.speed += 0.2;
+    }
+
+    function resetBallPos(fullReset) {
+        ball.x = canvas.width/2;
+        ball.y = canvas.height/2;
+        
+        if (fullReset) {
+            initBall();
+        } else {
+            // Si CPU falla, la bola regresa suavemente hacia el jugador
+            ball.dx = -Math.abs(ball.dx); 
+            ball.dy = (Math.random() * 2 - 1) * 3;
+        }
+    }
+
+    function draw() {
+        // Fondo
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Red
+        ctx.strokeStyle = '#333';
+        ctx.setLineDash([10, 15]);
+        ctx.beginPath(); ctx.moveTo(canvas.width/2, 0); ctx.lineTo(canvas.width/2, canvas.height); ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Paletas
+        ctx.fillStyle = '#00E5FF';
+        ctx.shadowBlur = 15; ctx.shadowColor = "#00E5FF";
+        ctx.fillRect(player.x, player.y, paddleWidth, paddleHeight);
+        
+        ctx.fillStyle = '#FF0055'; 
+        ctx.shadowColor = "#FF0055";
+        ctx.fillRect(cpu.x, cpu.y, paddleWidth, paddleHeight);
+
+        // Bola
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 10; ctx.shadowColor = "#fff";
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.size/2, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+    }
+
+    function gameOver() {
+        gameRunning = false;
+        AudioEngine.playDie(); // Sonido Muerte
+        document.getElementById('game-over-screen').style.display = 'block';
+        document.getElementById('final-score').innerText = score;
+        enviarPuntaje(score);
+    }
+
+    function resetGame() {
+        AudioEngine.init(); // Inicializar audio con interacción de usuario
+        score = 0;
+        document.getElementById('score').innerText = '0';
+        document.getElementById('game-over-screen').style.display = 'none';
+        
+        gameRunning = true;
+        cpu.speed = 4;
+        initBall(); // Esto ahora asegura que la bola vaya a la derecha
+        update();
+        canvas.focus();
+    }
+
+    // --- CONTROLES ---
+
+    // Teclado
+    document.addEventListener("keydown", (e) => {
+        // Evitar scroll
+        if(["ArrowUp","ArrowDown","Space"].indexOf(e.code) > -1) e.preventDefault();
+        
+        if(e.key === "ArrowUp" || e.key === "w" || e.key === "W") upPressed = true;
+        else if(e.key === "ArrowDown" || e.key === "s" || e.key === "S") downPressed = true;
+        
+        // REINICIO CON ESPACIO
+        if (e.code === "Space" && !gameRunning) {
+            resetGame();
+        }
+    }, false);
+
+    document.addEventListener("keyup", (e) => {
+        if(e.key === "ArrowUp" || e.key === "w" || e.key === "W") upPressed = false;
+        else if(e.key === "ArrowDown" || e.key === "s" || e.key === "S") downPressed = false;
+    }, false);
+
+    // Mouse
+    canvas.addEventListener('mousemove', e => {
+        const rect = canvas.getBoundingClientRect();
+        const root = document.documentElement;
+        const mouseY = e.clientY - rect.top - root.scrollTop;
+        if (mouseY > 0 && mouseY < canvas.height) player.y = mouseY - (paddleHeight/2);
+    });
+
+    // Iniciar con el primer movimiento
+    initBall();
+    update();
+
+</script>
+</body>
+</html>
