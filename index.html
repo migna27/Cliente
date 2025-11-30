@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Migna Cliente UwU</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Estilos específicos para el nuevo diseño lateral */
+        #chat-main-row {
+            display: flex;
+            flex: 1; /* Ocupa todo el espacio vertical disponible */
+            overflow: hidden; /* Evita scroll doble */
+            position: relative;
+        }
+
+        #chat-area {
+            flex-grow: 1; /* El chat toma todo el espacio posible */
+            border-right: 1px solid #333; /* Línea divisoria */
+        }
+
+        #game-sidebar {
+            width: 140px; /* Ancho fijo para la barra lateral */
+            background-color: #0f0f0f;
+            padding: 10px;
+            display: flex;
+            flex-direction: column; /* Botones uno debajo de otro */
+            gap: 10px;
+            overflow-y: auto;
+        }
+
+        /* Estilo de los botones laterales */
+        .sidebar-btn {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            border-radius: 5px;
+            transition: transform 0.1s, filter 0.2s;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.9em;
+        }
+
+        .sidebar-btn:active { transform: scale(0.95); }
+        .sidebar-btn:hover { filter: brightness(1.2); }
+
+        .btn-purple { background: #6A1B9A; border-left: 4px solid #AB47BC; }
+        .btn-yellow { background: #F57F17; border-left: 4px solid #FFCA28; color: black; }
+        .btn-blue   { background: #1565C0; border-left: 4px solid #42A5F5; }
+        
+        /* Título de sección en la barra */
+        .sidebar-title {
+            color: #666;
+            font-size: 0.7em;
+            text-transform: uppercase;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            border-bottom: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="conn-frame">
+        <h2>Bienvenido</h2>
+        <label>Usuario:</label>
+        <input type="text" id="user-input" placeholder="Tu nombre...">
+        <button id="conn-button" onclick="conectar()">Entrar</button>
+        <div id="error-log"></div>
+    </div>
+
+    <div id="chat-container" style="display: none;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: #000; border-bottom: 1px solid #333;">
+            <div id="status-label" style="font-weight:bold; color: lime;">🟢 En línea</div>
+            <button onclick="desconectar()" style="background: #D32F2F; border:none; color: white; padding: 5px 15px; cursor:pointer; border-radius: 4px;">Salir</button>
+        </div>
+        
+        <div id="chat-main-row">
+            
+            <div id="chat-area"></div>
+            
+            <div id="game-sidebar">
+                <div class="sidebar-title">Juegos</div>
+                
+                <button onclick="ejecutarComando('/jugar')" class="sidebar-btn btn-purple">
+                    🎲 <span>Jugar</span>
+                </button>
+                
+                <button onclick="ejecutarComando('/ranking')" class="sidebar-btn btn-yellow">
+                    🏆 <span>Ranking</span>
+                </button>
+                
+                <div class="sidebar-title">Sistema</div>
+                
+                <button onclick="ejecutarComando('/help')" class="sidebar-btn btn-blue">
+                    ℹ️ <span>Ayuda</span>
+                </button>
+                
+                <button onclick="ejecutarComando('/usuarios')" class="sidebar-btn" style="background: #333; border-left: 4px solid #666;">
+                    👥 <span>Usuarios</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="msg-frame">
+            <input type="text" id="msg-input" placeholder="Escribe un mensaje..." autocomplete="off">
+            <button id="send-button" onclick="enviarMensaje()">Enviar</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

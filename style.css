@@ -1,0 +1,304 @@
+html {
+    background-color: #000; 
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    cursor: crosshair;
+    
+    /* Fondo oscuro y color de texto base */
+    background-color: #000; 
+    color: #999;
+    
+    position: relative; 
+    overflow-x: hidden;
+}
+
+/* --- 2. CONTENEDORES DEL CHAT --- */
+
+/* Frame de Conexión */
+#conn-frame {
+    padding: 20px;
+    background-color: #0a0a0a; /* Negro 'header' */
+    border: 1px solid #00BFFF; /* Borde Neón */
+    box-shadow: 0 0 15px rgba(0, 191, 255, 0.4);
+    border-radius: 8px;
+    max-width: 350px;
+    margin: 50px auto;
+    display: flex; /* Para alinear los elementos */
+    flex-direction: column;
+    gap: 15px;
+    animation: content-glitch-in 0.6s ease-out forwards;
+}
+
+/* Contenedor principal del chat */
+#chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 95vh;
+    width: 98%;
+    max-width: 600px; /* Ancho máximo */
+    margin: 10px auto;
+    position: relative;
+    z-index: 1;
+}
+
+/* Área de mensajes */
+#chat-area {
+    flex-grow: 1;
+    background-color: rgba(10, 10, 10, 0.8); /* Fondo negro 'header' semi-transparente */
+    border: 1px solid #333; /* Borde oscuro */
+    border-radius: 8px;
+    padding: 10px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+}
+
+/* Frame de envío de mensajes */
+#msg-frame {
+    display: flex;
+    gap: 10px;
+}
+
+/* --- 3. INPUTS (Estilo 'input-welcome') --- */
+input[type="text"] {
+    flex-grow: 1;
+    font-size: 1.2em;
+    padding: 10px 5px;
+    background: transparent;
+    border: none;
+    outline: none;
+    border-bottom: 2px solid #333; /* Línea base oscura */
+    color: #999; /* Texto oscuro */
+    transition: border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}
+
+input[type="text"]:not(:focus):hover {
+    border-color: #00BFFF; /* Se ilumina a Azul */
+}
+
+input[type="text"]:focus {
+    color: #CCE5FF; /* Texto azulado claro */
+    border-color: #00BFFF; /* Borde se mantiene Azul */
+    outline: none; 
+    animation: blue-input-glow 2s ease-in-out infinite;
+}
+
+input[type="text"]::placeholder {
+    color: #333;
+    opacity: 0.8;
+    transition: color 0.3s ease;
+}
+
+input[type="text"]:focus::placeholder {
+    color: #555;
+}
+
+
+/* --- 4. BOTONES (Estilo 'button-ok') --- */
+button {
+    padding: 10px 20px;
+    font-size: 1em; /* Ajustado para el chat */
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 0; 
+    
+    background-color: transparent;
+    border: 2px solid #444; /* Borde gris oscuro */
+    color: #444; /* Texto gris oscuro */
+    
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    
+    animation: button-pulse 2.5s infinite ease-in-out;
+}
+
+button:hover {
+    background-color: #00BFFF;
+    color: #000;
+    border-color: #00BFFF;
+    box-shadow: 0 0 10px #00BFFF,
+                0 0 20px #00BFFF,
+                0 0 30px rgba(0, 191, 255, 0.7);
+    animation: button-glitch-hover 0.25s infinite linear;
+}
+
+button:active {
+    transform: translateY(1px); 
+    box-shadow: 0 0 10px rgba(0, 191, 255, 0.5);
+    background-color: #008fbf;
+}
+
+/* --- 5. ESTILOS DE CHAT (Nuevos) --- */
+
+label {
+    color: #999; 
+    font-size: 18px;
+    margin-bottom: -5px; /* Ajuste para el layout */
+}
+
+#status-label {
+    margin-bottom: 10px;
+    text-align: center;
+    font-weight: bold;
+    color: #F44336; /* Rojo por defecto */
+    text-shadow: 0 0 8px rgba(244, 67, 54, 0.7);
+    transition: all 0.3s ease;
+}
+
+#error-log {
+    color: #F44336;
+    text-shadow: 0 0 8px rgba(244, 67, 54, 0.7);
+    margin-top: 10px;
+    text-align: center;
+}
+
+/* Estilos para los mensajes en el chat */
+.chat-message {
+    margin-bottom: 8px;
+    color: #ccc; /* Texto de chat un-poco más claro */
+}
+
+/* Mensaje del servidor (ej. "Migna se ha unido") */
+.chat-message.server,
+.chat-message[id^="local-connect"] /* Tu mensaje local de conexión */
+{
+    color: #4CAF50; /* Verde neón */
+    font-style: italic;
+    text-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+}
+
+/* Mensaje de "Tú:" (ej. "💬 Tú: hola") */
+.chat-message[id^="local-"] 
+{
+    color: #00BFFF; /* Azul neón */
+    font-weight: bold;
+}
+
+/* Mensaje eliminado */
+.chat-message.deleted {
+    color: #F44336;
+    font-style: italic;
+    text-shadow: 0 0 5px rgba(244, 67, 54, 0.5);
+}
+
+
+/* --- 6. KEYFRAMES (DE 'elote/styles.css') --- */
+
+/* Animación de entrada */
+@keyframes content-glitch-in {
+  0% {
+    opacity: 0;
+    transform: translate(-10px, 5px);
+  }
+  50% {
+    opacity: 0.5;
+    transform: translate(0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+}
+
+/* Brillo para Input (box-shadow) */
+@keyframes blue-input-glow {
+  0% {
+    box-shadow: 0 4px 10px -5px rgba(0, 191, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 20px -5px rgba(0, 191, 255, 0.8);
+  }
+  100% {
+    box-shadow: 0 4px 10px -5px rgba(0, 191, 255, 0.4);
+  }
+}
+
+/* Pulso del botón */
+@keyframes button-pulse {
+  0% {
+    box-shadow: 0 0 5px rgba(0, 191, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(0, 191, 255, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 5px rgba(0, 191, 255, 0);
+  }
+}
+
+/* Animación 'glitch' para el hover de los botones */
+@keyframes button-glitch-hover {
+  0% {
+    transform: translate(0, 0);
+    text-shadow: none;
+  }
+  25% {
+    transform: translate(-3px, 0);
+    text-shadow: -2px 0 red;
+  }
+  50% {
+    transform: translate(3px, 0);
+    text-shadow: 2px 0 #00BFFF;
+  }
+  75% {
+    transform: translate(-2px, 0);
+    text-shadow: -1px 0 red;
+  }
+  100% {
+    transform: translate(0, 0);
+    text-shadow: none;
+  }
+}
+
+/* Scrollbar estilo 'dark' */
+::-webkit-scrollbar {
+  width: 10px;
+  background-color: #0a0a0a;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #222; 
+  border-radius: 10px;
+  border: 2px solid #0a0a0a;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #00BFFF; /* Se ilumina */
+}
+
+#game-controls button {
+    font-weight: bold;
+    border-radius: 4px;
+    transition: transform 0.1s;
+}
+
+#game-controls button:active {
+    transform: scale(0.95);
+}
+
+/* Asegura que el contenedor use Flexbox vertical para organizar header-cuerpo-footer */
+#chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 90vh; /* Ocupa el 90% de la altura de la ventana */
+    width: 95%;
+    max-width: 900px;
+    margin: 20px auto;
+    background-color: #000;
+    border: 1px solid #333;
+    border-radius: 8px;
+    overflow: hidden; /* Importante para las esquinas redondeadas */
+    box-shadow: 0 0 20px rgba(0, 191, 255, 0.2);
+}
+
+/* El área de mensajes (input) debe tener altura fija o ajustada */
+#msg-frame {
+    padding: 10px;
+    background: #111;
+    border-top: 1px solid #333;
+    display: flex;
+    gap: 10px;
+}
