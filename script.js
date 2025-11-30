@@ -247,3 +247,16 @@ async function ejecutarComando(comando) {
         alert("No se pudo enviar el comando al servidor.");
     }
 }
+
+function abrirJuego(archivo) {
+    const w = 870;
+    const h = 520;
+    const left = (screen.width/2)-(w/2);
+    const top = (screen.height/2)-(h/2);
+    
+    window.open(
+        `/games/${archivo}`, 
+        `MignaGame_${archivo}`, 
+        `toolbar=no, location=no, directories=no, status=no, menubar=no, scrollbars=no, resizable=no, copyhistory=no, width=${w}, height=${h}, top=${top}, left=${left}`
+    );
+}

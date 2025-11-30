@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Neon Dash: Arcade</title>
+    <style>
+        body {
+            margin: 0; background-color: #020005; overflow: hidden;
+            font-family: 'Segoe UI', monospace; color: #D500F9;
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; height: 100vh; user-select: none;
+        }
+        canvas {
+            border: 1px solid #7c4dff; box-shadow: 0 0 20px rgba(124, 77, 255, 0.2);
+            background: #000; image-rendering: pixelated; cursor: pointer;
+        }
+        #ui-layer {
+            position: absolute; top: 20px; width: 100%; text-align: center;
+            pointer-events: none; z-index: 10;
+        }
+        h1 { margin: 0; font-size: 3em; color: #fff; text-shadow: 2px 2px 0px #D500F9; font-style: italic; letter-spacing: 2px; }
+        #start-msg {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #fff; background: rgba(0,0,0,0.8); padding: 20px;
+            border: 1px solid #00E5FF; text-align: center; pointer-events: none;
+            font-size: 1.5em; animation: pulse 1s infinite;
+        }
+        @keyframes pulse { 0% { opacity: 0.8; } 50% { opacity: 1; text-shadow: 0 0 10px #00E5FF; } 100% { opacity: 0.8; } }
+        #game-over-screen {
+            display: none; position: absolute; background: rgba(10, 0, 20, 0.95);
+            padding: 40px; border: 2px solid #00E5FF; box-shadow: 0 0 30px rgba(0, 229, 255, 0.3);
+            text-align: center; pointer-events: auto; z-index: 20; border-radius: 4px; backdrop-filter: blur(5px);
+        }
+        button {
+            background: transparent; color: #00E5FF; border: 2px solid #00E5FF;
+            padding: 10px 30px; font-size: 1.2em; cursor: pointer; font-weight: 800;
+            margin-top: 20px; text-transform: uppercase; transition: all 0.2s;
+        }
+        button:hover { background: #00E5FF; color: #000; box-shadow: 0 0 20px #00E5FF; }
+    </style>
+</head>
+<body>
+    <div id="ui-layer">
+        <h1>NEON DASH</h1>
+        <p style="font-weight: bold; font-size: 1.2em;">SCORE: <span id="score" style="color: #00E5FF;">0</span></p>
+        <p style="font-size: 0.8em; color: #888;">SERVER: <span id="net-status" style="color: #0f0;">CONNECTED</span></p>
+    </div>
+    <div id="start-msg">HAZ CLICK PARA INICIAR<br><span style="font-size:0.6em; color:#00E5FF;">(Audio Activado)</span></div>
+    <canvas id="gameCanvas" width="850" height="480"></canvas>
+    <div id="game-over-screen">
+        <h2 style="color: #FF1744; font-size: 3em; margin: 0; text-shadow: 0 0 10px red;">SYSTEM FAILURE</h2>
+        <p style="color: #aaa;">FINAL SCORE</p>
+        <p id="final-score" style="color: #fff; font-size: 2.5em; margin: 10px 0;">0</p>
+        <p id="upload-msg" style="color: #D500F9; font-style: italic;">SYNCING DATA...</p>
+        <button onclick="reiniciarJuego()">REBOOT</button>
+    </div>
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // --- AUDIO ---
+    const AudioEngine = {
+        ctx: null,
+        init: function() {
+            if (!this.ctx) { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+            if (this.ctx.state === 'suspended') { this.ctx.resume(); }
+        },
+        playTone: function(freq, type, duration, vol=0.1) {
+            if(!this.ctx) return;
+            const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+            osc.type = type; osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.start(); osc.stop(this.ctx.currentTime + duration);
+        },
+        playJump: function() { this.playTone(150, 'sawtooth', 0.1, 0.1); },
+        playLand: function() { this.playTone(100, 'square', 0.05, 0.05); },
+        playScore: function() { this.playTone(800, 'sine', 0.1, 0.05); setTimeout(() => this.playTone(1200, 'sine', 0.2, 0.05), 50); },
+        playDie: function() { this.playTone(50, 'sawtooth', 0.5, 0.2); }
+    };
+
+    // --- RED ---
+    let heartbeatInterval = null;
+    function iniciarRed() {
+        if(heartbeatInterval) clearInterval(heartbeatInterval);
+        heartbeatInterval = setInterval(() => {
+            fetch('/send', { method: 'POST', body: JSON.stringify({ message: "/status [Juego] Neon Runner Active" }) }).catch(()=>{});
+        }, 15000); 
+    }
+    async function enviarPuntaje(puntos) {
+        clearInterval(heartbeatInterval);
+        const msg = document.getElementById('upload-msg');
+        try {
+            // 1. Enviar comando oculto para registro
+            await fetch('/send', { method: 'POST', body: JSON.stringify({ message: `/submit_score neon_dash ${puntos}` }) });
+            // 2. Enviar mensaje de chat visible
+            await fetch('/send', { method: 'POST', body: JSON.stringify({ message: `🎮 [ARCADE] He conseguido ${puntos} puntos en Neon Dash!` }) });
+            
+            msg.innerText = "UPLOAD COMPLETE"; msg.style.color = "#00E5FF";
+        } catch { msg.innerText = "OFFLINE RECORD"; msg.style.color = "#FF4081"; }
+    }
+
+    // --- VARIABLES JUEGO ---
+    const C_BG='#020005', C_PLAYER='#fff', C_GROUND='#7c4dff', C_PLAT='#00E5FF', C_SPIKE='#FF4081'; 
+    const matrixChars = "01ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍ";
+    const drops = Array(Math.floor(canvas.width / 14)).fill(1);
+    
+    let gameRunning = false, waitingStart = true, score = 0, frameCount = 0;
+    const CONSTANT_SPEED = 4.0; 
+    let speed = CONSTANT_SPEED;
+    let glitchIntensity = 0;
+
+    const player = {
+        x: 100, y: 300, w: 30, h: 30, dy: 0, 
+        jumpPower: -10.5, gravity: 0.5,
+        grounded: false, rotation: 0, doubleJumpUsed: false,
+        baseY: 380, prevY: 300, sx: 1, sy: 1 
+    };
+    let entities = [], gaps = [], particles = []; 
+
+    // --- LOGICA ---
+    function update() {
+        if (!gameRunning) return;
+        player.prevY = player.y;
+        player.dy += player.gravity;
+        player.y += player.dy;
+        player.sx = lerp(player.sx, 1, 0.1); player.sy = lerp(player.sy, 1, 0.1);
+
+        if (!player.grounded) { player.rotation += 0.10; if(player.dy>5){player.sy=1.2; player.sx=0.8;} } 
+        else player.rotation = 0; 
+
+        let onSurface = false, isOverGap = false;
+        const footX = player.x + player.w/2; 
+        for (let gap of gaps) { if (footX > gap.x && footX < gap.x + gap.w) { isOverGap = true; break; } }
+
+        if (!isOverGap) {
+            if (player.y + player.h >= player.baseY && player.prevY + player.h <= player.baseY + 15) {
+                land(player.baseY - player.h); onSurface = true;
+            } else if (player.grounded && player.y + player.h >= player.baseY) {
+                player.y = player.baseY - player.h; player.dy = 0; onSurface = true;
+            }
+        }
+
+        entities.forEach(ent => {
+            const overlapX = (player.x + player.w - 5 > ent.x) && (player.x + 5 < ent.x + ent.w);
+            if (overlapX) {
+                if (ent.type === 'spike') {
+                    if (player.y + player.h - 5 > ent.y && player.y + 5 < ent.y + ent.h) die();
+                } else if (ent.type === 'platform') {
+                    const footY = player.y + player.h;
+                    const prevFootY = player.prevY + player.h;
+                    const crossedLine = prevFootY <= ent.y + 8 && footY >= ent.y; 
+                    if (player.dy >= 0 && crossedLine) { land(ent.y - player.h); onSurface = true; }
+                }
+            }
+        });
+
+        if (!onSurface) player.grounded = false;
+        if (player.y > canvas.height) die();
+
+        speed = CONSTANT_SPEED;
+        frameCount++;
+        if (frameCount % 100 === 0) spawnPattern();
+
+        for (let i = entities.length - 1; i >= 0; i--) { entities[i].x -= speed; if (entities[i].x < -100) entities.splice(i, 1); }
+        for (let i = gaps.length - 1; i >= 0; i--) { gaps[i].x -= speed; if (gaps[i].x < -100) gaps.splice(i, 1); }
+        for (let i = particles.length - 1; i >= 0; i--) { 
+            let p = particles[i]; p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life--;
+            if(p.y > player.baseY) { p.y = player.baseY; p.vy *= -0.5; }
+            if (p.life <= 0) particles.splice(i, 1); 
+        }
+
+        score++;
+        document.getElementById('score').innerText = Math.floor(score/10);
+        if (score % 1000 === 0 && score > 0) { AudioEngine.playScore(); triggerGlitch(10); }
+        if (glitchIntensity > 0) glitchIntensity--;
+    }
+
+    function land(yPos) {
+        if(!player.grounded) { player.sy = 0.6; player.sx = 1.4; spawnParticles(player.x, player.y+player.h, 5); AudioEngine.playLand(); }
+        player.y = yPos; player.dy = 0; player.grounded = true; player.doubleJumpUsed = false; player.rotation = 0;
+    }
+
+    function spawnPattern() {
+        const rand = Math.random(), startX = canvas.width;
+        if (rand > 0.75) { for(let i=0; i<2; i++) entities.push({type:'platform', x:startX+(i*160), y:player.baseY-70-(i*60), w:100, h:20}); } 
+        else if (rand > 0.50) { gaps.push({x:startX, w:120}); entities.push({type:'platform', x:startX+40, y:player.baseY-50, w:80, h:20}); }
+        else if (rand > 0.25) { entities.push({type:'platform', x:startX, y:player.baseY-90, w:350, h:20}); entities.push({type:'spike', x:startX+100, y:player.baseY-30, w:30, h:30}); }
+        else { entities.push({type:'spike', x:startX, y:player.baseY-30, w:30, h:30}); }
+    }
+
+    function jump() {
+        if (waitingStart) { waitingStart = false; gameRunning = true; AudioEngine.init(); document.getElementById('start-msg').style.display = 'none'; }
+        if (player.grounded) { player.dy = player.jumpPower; player.grounded = false; player.sx = 0.7; player.sy = 1.3; AudioEngine.playJump(); spawnParticles(player.x, player.y+player.h, 5); }
+        else if (!player.doubleJumpUsed) { player.dy = player.jumpPower * 0.9; player.doubleJumpUsed = true; player.rotation += 0.5; AudioEngine.playJump(); triggerGlitch(2); spawnParticles(player.x, player.y+player.h, 8); }
+    }
+
+    function die() {
+        gameRunning = false; AudioEngine.playDie(); triggerGlitch(50); draw();
+        document.getElementById('game-over-screen').style.display = 'block';
+        document.getElementById('final-score').innerText = Math.floor(score/10);
+        enviarPuntaje(Math.floor(score/10));
+    }
+
+    function reiniciarJuego() {
+        entities=[]; gaps=[]; particles=[]; score=0; speed=CONSTANT_SPEED; player.y=200; player.dy=0; player.doubleJumpUsed=false;
+        gameRunning=true; document.getElementById('game-over-screen').style.display='none'; iniciarRed(); loop();
+    }
+
+    function draw() {
+        ctx.fillStyle = C_BG; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "rgba(0, 255, 0, 0.1)"; ctx.font = "14px monospace";
+        for(let i=0; i<drops.length; i++) { if (frameCount % 2 === 0) { ctx.fillText(matrixChars[Math.floor(Math.random()*matrixChars.length)], i*14, drops[i]*14); if(drops[i]*14>canvas.height && Math.random()>0.98) drops[i]=0; drops[i]++; } }
+        ctx.save();
+        if (glitchIntensity > 0) { const s = glitchIntensity * (Math.random()-0.5); ctx.translate(s, s); }
+        
+        ctx.fillStyle = '#000'; ctx.fillRect(0, player.baseY, canvas.width, canvas.height-player.baseY); 
+        ctx.strokeStyle = C_GROUND; ctx.lineWidth = 3; ctx.shadowColor = C_GROUND; ctx.shadowBlur = 10;
+        ctx.beginPath();
+        let currentX = 0; let sortedGaps = [...gaps].sort((a,b)=>a.x-b.x);
+        for (let gap of sortedGaps) {
+            if (gap.x>canvas.width) break; if (gap.x+gap.w<0) continue; 
+            if (gap.x>currentX) { ctx.moveTo(currentX, player.baseY); ctx.lineTo(gap.x, player.baseY); }
+            ctx.moveTo(gap.x, player.baseY); ctx.lineTo(gap.x, canvas.height); ctx.moveTo(gap.x+gap.w, canvas.height); ctx.lineTo(gap.x+gap.w, player.baseY);
+            currentX = gap.x+gap.w;
+        }
+        if (currentX<canvas.width) { ctx.moveTo(currentX, player.baseY); ctx.lineTo(canvas.width, player.baseY); }
+        ctx.stroke();
+
+        entities.forEach(ent => {
+            if (ent.type==='spike') { ctx.shadowColor=C_SPIKE; ctx.fillStyle=C_SPIKE; ctx.beginPath(); ctx.moveTo(ent.x,ent.y+ent.h); ctx.lineTo(ent.x+ent.w/2,ent.y); ctx.lineTo(ent.x+ent.w,ent.y+ent.h); ctx.fill(); }
+            else { ctx.shadowColor=C_PLAT; ctx.strokeStyle=C_PLAT; ctx.lineWidth=2; ctx.strokeRect(ent.x,ent.y,ent.w,ent.h); ctx.fillStyle="rgba(0,229,255,0.15)"; ctx.fillRect(ent.x,ent.y,ent.w,ent.h); }
+        });
+
+        ctx.fillStyle='#fff'; ctx.shadowBlur=0;
+        for (let p of particles) { ctx.globalAlpha=p.life/20; ctx.fillRect(p.x,p.y,p.size,p.size); }
+        ctx.globalAlpha=1;
+
+        const drawX=Math.floor(player.x+player.w/2), drawY=Math.floor(player.y+player.h/2);
+        ctx.translate(drawX, drawY); ctx.rotate(player.rotation); ctx.scale(player.sx, player.sy);
+        ctx.fillStyle=C_PLAYER; ctx.fillRect(-player.w/2,-player.h/2,player.w,player.h);
+        ctx.lineWidth=2; ctx.strokeStyle="#000"; ctx.strokeRect(-player.w/2,-player.h/2,player.w,player.h);
+        ctx.fillStyle='#000'; ctx.fillRect(-5,-5,10,10);
+        ctx.restore();
+
+        if (gameRunning || waitingStart) requestAnimationFrame(loop);
+    }
+
+    function lerp(start, end, amt) { return (1-amt)*start+amt*end; }
+    function triggerGlitch(i) { glitchIntensity = i; }
+    function spawnParticles(x, y, count) { for(let i=0; i<count; i++) particles.push({x:x, y:y, vx:(Math.random()-0.5)*5, vy:(Math.random()-1)*5, life:30+Math.random()*20, size:Math.random()*3+1}); }
+
+    window.addEventListener('keydown', e => { if(e.code==='Space'||e.code==='ArrowUp') { e.preventDefault(); jump(); } });
+    canvas.addEventListener('mousedown', (e)=>{e.preventDefault(); jump();});
+    canvas.addEventListener('touchstart', (e)=>{e.preventDefault(); jump();});
+    iniciarRed(); loop();
+</script>
+</body>
+</html>

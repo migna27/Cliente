@@ -5,10 +5,11 @@ import threading
 import json
 import time
 import select
+import os 
 
 # --- Configuración ---
 WEB_PORT = 8000
-TCP_HOST = "127.0.0.1" # IP del Servidor de Chat
+TCP_HOST = "127.0.0.1" 
 TCP_PORT = 5000
 TIMEOUT_SECONDS = 120.0 
 
@@ -24,12 +25,9 @@ class AppState:
 
 state = AppState()
 
-# --- UTILIDAD: Obtener IP Local (Para mostrar en consola) ---
+# --- UTILIDAD: Obtener IP Local ---
 def get_local_ip():
-    """Detecta la IP de la máquina en la red LAN."""
     try:
-        # Truco: Conectar a una IP pública (no envía datos reales)
-        # para ver qué interfaz de red elige el sistema operativo.
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         local_ip = s.getsockname()[0]
@@ -38,7 +36,7 @@ def get_local_ip():
     except:
         return "127.0.0.1"
 
-# --- Hilo: Monitor de Conexión (Watchdog) ---
+# --- Hilo: Monitor de Conexión ---
 def connection_watchdog():
     while True:
         time.sleep(5)
@@ -77,7 +75,6 @@ def tcp_receiver():
                     line_bytes, buffer_bytes = buffer_bytes.split(b"\n", 1)
                     line_str = line_bytes.decode('utf-8').strip()
                     if line_str:
-                        # print(f"📥 Recibido: {line_str}") # Debug
                         try:
                             msg_json = json.loads(line_str)
                             with state.lock:
@@ -93,6 +90,7 @@ class ChatRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         state.last_activity = time.time()
+        
         if self.path == '/poll':
             msgs = []
             with state.lock:
@@ -100,12 +98,23 @@ class ChatRequestHandler(http.server.SimpleHTTPRequestHandler):
                     msgs = state.messages_queue[:]
                     state.messages_queue.clear()
             self.respond_json(msgs)
+            
         elif self.path == '/' or self.path == '/index.html':
             self.send_file("index.html", "text/html")
         elif self.path == '/style.css':
             self.send_file("style.css", "text/css")
         elif self.path == '/script.js':
             self.send_file("script.js", "application/javascript")
+            
+        # --- RUTA PARA JUEGOS ---
+        elif self.path.startswith('/games/'):
+            # Busca el archivo dentro de la carpeta MignaGames
+            filename = self.path.split('/games/')[1]
+            file_path = os.path.join("MignaGames", filename)
+            if os.path.exists(file_path):
+                self.send_file(file_path, "text/html")
+            else:
+                self.send_error(404)
         else:
             self.send_error(404)
 
@@ -178,19 +187,11 @@ class ThreadingHTTPServer(socketserver.ThreadingTCPServer):
 
 if __name__ == "__main__":
     threading.Thread(target=connection_watchdog, daemon=True).start()
-    
-    # Obtener IPs
     lan_ip = get_local_ip()
     
     print("="*50)
     print(f"🚀 CLIENTE WEB INICIADO (Puerto {WEB_PORT})")
-    print("="*50)
-    print("-" * 50)
-    print(f"🌍 Acceso desde la Red ")
-    print(f"   👉 http://{lan_ip}:{WEB_PORT}")
-    print("="*50)
-    print("⚠️  IMPORTANTE: Si conectas otros dispositivos, asegúrate")
-    print("    de que ambos estén en la misma red Wi-Fi.")
+    print(f"🌍 Acceso LAN: http://{lan_ip}:{WEB_PORT}")
     print("="*50)
     
     try:
@@ -198,7 +199,6 @@ if __name__ == "__main__":
         webbrowser.open(f"http://localhost:{WEB_PORT}")
     except: pass
     
-    # Escuchar en todas las interfaces ("") para permitir acceso externo
     server = ThreadingHTTPServer(("", WEB_PORT), ChatRequestHandler)
     try:
         server.serve_forever()
